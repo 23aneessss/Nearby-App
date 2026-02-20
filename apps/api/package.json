@@ -1,0 +1,39 @@
+{
+    "name": "@nearby/api",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "tsx watch src/index.ts",
+        "start": "node dist/index.js",
+        "build": "tsc",
+        "typecheck": "tsc --noEmit",
+        "seed": "tsx src/db/seed.ts",
+        "migrate": "npm run db:migrate",
+        "db:generate": "drizzle-kit generate",
+        "db:migrate": "drizzle-kit migrate",
+        "db:push": "drizzle-kit push"
+    },
+    "dependencies": {
+        "@nearby/shared": "*",
+        "bcryptjs": "^2.4.3",
+        "cors": "^2.8.5",
+        "dotenv": "^16.4.5",
+        "drizzle-orm": "^0.45.1",
+        "express": "^4.21.0",
+        "jsonwebtoken": "^9.0.2",
+        "postgres": "^3.4.4",
+        "uuid": "^10.0.0",
+        "zod": "^3.23.8"
+    },
+    "devDependencies": {
+        "@types/bcryptjs": "^2.4.6",
+        "@types/cors": "^2.8.17",
+        "@types/express": "^4.17.21",
+        "@types/jsonwebtoken": "^9.0.7",
+        "@types/uuid": "^10.0.0",
+        "drizzle-kit": "^0.31.9",
+        "tsx": "^4.19.0",
+        "typescript": "^5.5.0"
+    }
+}

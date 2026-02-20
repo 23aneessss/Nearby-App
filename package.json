@@ -1,0 +1,21 @@
+{
+  "name": "nearby",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "api:dev": "npm run dev --workspace=apps/api",
+    "api:seed": "npm run seed --workspace=apps/api",
+    "mobile:start": "npm run start --workspace=apps/mobile",
+    "shared:build": "npm run build --workspace=packages/shared",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "nullthrows": "1.1.1"
+  }
+}
