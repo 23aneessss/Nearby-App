@@ -24,49 +24,58 @@ interface SignUpData {
     address?: string;
     city?: string;
     workingHours?: string;
+    // Compatibility fields for profile-like payloads
+    name?: string;
+    description?: string;
+    lat?: number;
+    lng?: number;
 }
 
 export async function signUp(data: SignUpData) {
-    const { email, password, firstName, lastName, phone, role = "CLIENT" } = data;
+    const { email, password, firstName, lastName, phone } = data;
+    const role = inferSignupRole(data);
 
-    const existing = await db
-        .select()
-        .from(users)
-        .where(eq(users.email, email))
-        .limit(1);
-    if (existing.length > 0) {
-        throw new AppError(409, "CONFLICT", "Email already registered");
-    }
+    return db.transaction(async (tx) => {
+        const existing = await tx
+            .select()
+            .from(users)
+            .where(eq(users.email, email))
+            .limit(1);
+        if (existing.length > 0) {
+            throw new AppError(409, "CONFLICT", "Email already registered");
+        }
 
-    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-    const [user] = await db
-        .insert(users)
-        .values({ email, passwordHash, firstName, lastName, phone: phone ?? null, role })
-        .returning();
+        const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+        const [user] = await tx
+            .insert(users)
+            .values({
+                email,
+                passwordHash,
+                firstName,
+                lastName,
+                phone: phone ?? null,
+                role,
+            })
+            .returning();
 
-    if (!user) {
-        throw new AppError(500, "INTERNAL_ERROR", "Failed to create user");
-    }
+        if (!user) {
+            throw new AppError(500, "INTERNAL_ERROR", "Failed to create user");
+        }
 
-    // If provider, auto-create profile
-    if (role === "PROVIDER" && data.businessName && data.address && data.city) {
-        await db.insert(providerProfiles).values({
-            userId: user.id,
-            name: data.businessName,
-            description: data.serviceDescription || `${data.profession} services`,
-            address: data.address,
-            city: data.city,
-            lat: 0, // will be updated later with geocoding
-            lng: 0,
-            workingHours: data.workingHours || "Mon-Fri 9:00-17:00",
-        });
-    }
+        if (role === "PROVIDER") {
+            const profileData = buildProviderProfileData(data, firstName, lastName);
+            await tx.insert(providerProfiles).values({
+                userId: user.id,
+                ...profileData,
+            });
+        }
 
-    const token = generateToken(user.id, user.email, user.role);
-    return {
-        accessToken: token,
-        user: sanitizeUser(user),
-    };
+        const token = generateToken(user.id, user.email, user.role);
+        return {
+            accessToken: token,
+            user: sanitizeUser(user),
+        };
+    });
 }
 
 export async function login(email: string, password: string) {
@@ -134,5 +143,57 @@ function sanitizeUser(user: {
         role: user.role,
         status: user.status,
         createdAt: user.createdAt.toISOString(),
+    };
+}
+
+function inferSignupRole(data: SignUpData): "CLIENT" | "PROVIDER" {
+    if (data.role === "PROVIDER") return "PROVIDER";
+    if (data.role === "CLIENT") return "CLIENT";
+
+    const hasProviderSignal = Boolean(
+        data.businessName ||
+            data.profession ||
+            data.serviceDescription ||
+            data.address ||
+            data.city ||
+            data.name ||
+            data.description
+    );
+
+    return hasProviderSignal ? "PROVIDER" : "CLIENT";
+}
+
+function buildProviderProfileData(
+    data: SignUpData,
+    firstName: string,
+    lastName: string
+): {
+    name: string;
+    description: string;
+    address: string;
+    city: string;
+    lat: number;
+    lng: number;
+    workingHours: string;
+} {
+    const name =
+        data.businessName?.trim() ||
+        data.name?.trim() ||
+        `${firstName} ${lastName}`.trim();
+    const description =
+        data.serviceDescription?.trim() ||
+        data.description?.trim() ||
+        (data.profession?.trim()
+            ? `${data.profession.trim()} services`
+            : "Local services");
+
+    return {
+        name,
+        description,
+        address: data.address?.trim() || "Not provided",
+        city: data.city?.trim() || "Not provided",
+        lat: data.lat ?? 0,
+        lng: data.lng ?? 0,
+        workingHours: data.workingHours?.trim() || "Mon-Fri 9:00-17:00",
     };
 }

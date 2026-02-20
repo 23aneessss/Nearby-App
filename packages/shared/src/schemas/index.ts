@@ -30,11 +30,92 @@ export const providerSignUpSchema = z.object({
     workingHours: z.string().min(1, "Working hours are required").max(500).optional().default("Mon-Fri 9:00-17:00"),
 });
 
-// Union schema for the API (accepts both)
-export const signUpSchema = z.discriminatedUnion("role", [
-    clientSignUpSchema,
-    providerSignUpSchema,
-]);
+// API signup schema:
+// Accepts client and provider payloads and infers provider intent when
+// provider fields are present (for frontend/backend compatibility).
+export const signUpSchema = z
+    .object({
+        ...signUpBase,
+        role: z.enum(["CLIENT", "PROVIDER"]).optional(),
+        businessName: z.string().min(1).max(200).optional(),
+        profession: z.string().min(1).max(200).optional(),
+        serviceDescription: z
+            .string()
+            .min(10, "Describe your services (min 10 chars)")
+            .max(2000)
+            .optional(),
+        address: z.string().min(1).max(500).optional(),
+        city: z.string().min(1).max(100).optional(),
+        workingHours: z
+            .string()
+            .min(1)
+            .max(500)
+            .optional()
+            .default("Mon-Fri 9:00-17:00"),
+        // Compatibility with payloads that use profile-like naming
+        name: z.string().min(1).max(200).optional(),
+        description: z.string().min(1).max(2000).optional(),
+        lat: z.number().min(-90).max(90).optional(),
+        lng: z.number().min(-180).max(180).optional(),
+    })
+    .superRefine((data, ctx) => {
+        const hasProviderSignal = Boolean(
+            data.role === "PROVIDER" ||
+                data.businessName ||
+                data.profession ||
+                data.serviceDescription ||
+                data.address ||
+                data.city ||
+                data.name ||
+                data.description
+        );
+
+        if (!hasProviderSignal) return;
+
+        if (!(data.businessName || data.name)) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["businessName"],
+                message: "Business name is required",
+            });
+        }
+        if (!(data.serviceDescription || data.description || data.profession)) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["serviceDescription"],
+                message: "Describe your services",
+            });
+        }
+        if (!data.address) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["address"],
+                message: "Address is required",
+            });
+        }
+        if (!data.city) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["city"],
+                message: "City is required",
+            });
+        }
+    })
+    .transform((data) => {
+        const inferredRole =
+            data.role ??
+            (data.businessName ||
+            data.profession ||
+            data.serviceDescription ||
+            data.address ||
+            data.city ||
+            data.name ||
+            data.description
+                ? "PROVIDER"
+                : "CLIENT");
+
+        return { ...data, role: inferredRole };
+    });
 
 export const loginSchema = z.object({
     email: z.string().email("Invalid email address"),
