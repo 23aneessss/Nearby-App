@@ -117,6 +117,7 @@ export interface UpdateServiceRequest {
 export interface AvailabilitySlotResponse {
     id: string;
     providerId: string;
+    serviceId: string | null;
     startAt: string;
     endAt: string;
     isBooked: boolean;
@@ -129,6 +130,31 @@ export interface CreateAvailabilitySlotsRequest {
         endAt: string;
         timezone: string;
     }>;
+}
+
+export interface GenerateSlotsRequest {
+    serviceId: string;
+    date: string; // ISO date string, e.g. "2026-03-01"
+    startTime: string; // e.g. "08:00"
+    endTime: string; // e.g. "16:00"
+    timezone: string;
+}
+
+// ─── Provider Search Result ─────────────────────────────
+export interface ProviderSearchResult {
+    id: string;
+    userId: string;
+    name: string;
+    description: string;
+    address: string;
+    city: string;
+    lat: number;
+    lng: number;
+    workingHours: string;
+    verified: boolean;
+    createdAt: string;
+    priceRange: { min: number; max: number } | null;
+    durationRange: { min: number; max: number } | null;
 }
 
 // ─── Booking ─────────────────────────────────────────────

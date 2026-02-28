@@ -62,6 +62,23 @@ router.get(
 );
 
 router.get(
+    "/slots/:slotId",
+    authenticate,
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const data = await providerService.getSlotDetail(req.params["slotId"]!);
+            if (!data) {
+                res.status(404).json({ success: false, error: "Slot not found" });
+                return;
+            }
+            res.json({ success: true, data });
+        } catch (err) {
+            next(err);
+        }
+    }
+);
+
+router.get(
     "/services/:serviceId",
     authenticate,
     async (req: Request, res: Response, next: NextFunction) => {

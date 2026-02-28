@@ -61,13 +61,13 @@ export const signUpSchema = z
     .superRefine((data, ctx) => {
         const hasProviderSignal = Boolean(
             data.role === "PROVIDER" ||
-                data.businessName ||
-                data.profession ||
-                data.serviceDescription ||
-                data.address ||
-                data.city ||
-                data.name ||
-                data.description
+            data.businessName ||
+            data.profession ||
+            data.serviceDescription ||
+            data.address ||
+            data.city ||
+            data.name ||
+            data.description
         );
 
         if (!hasProviderSignal) return;
@@ -105,12 +105,12 @@ export const signUpSchema = z
         const inferredRole =
             data.role ??
             (data.businessName ||
-            data.profession ||
-            data.serviceDescription ||
-            data.address ||
-            data.city ||
-            data.name ||
-            data.description
+                data.profession ||
+                data.serviceDescription ||
+                data.address ||
+                data.city ||
+                data.name ||
+                data.description
                 ? "PROVIDER"
                 : "CLIENT");
 
@@ -168,6 +168,14 @@ export const createAvailabilitySlotsSchema = z.object({
         )
         .min(1)
         .max(100),
+});
+
+export const generateSlotsSchema = z.object({
+    serviceId: z.string().uuid(),
+    date: z.string().min(1, "Date is required"),
+    startTime: z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:mm format"),
+    endTime: z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:mm format"),
+    timezone: z.string().min(1).max(50),
 });
 
 // ─── Booking Schemas ─────────────────────────────────────

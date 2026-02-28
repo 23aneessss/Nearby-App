@@ -75,7 +75,7 @@ export async function getProviderProfile(providerId: string) {
             )
         )
         .orderBy(availabilitySlots.startAt)
-        .limit(20);
+        .limit(50);
 
     return { profile, services: servicesList, nextSlots: slots };
 }
@@ -245,17 +245,53 @@ export async function searchProviders(params: {
         .from(providerProfiles)
         .where(and(...conditions));
 
-    const results = await query;
+    let results = await query;
 
     // If geo params, filter by distance (Haversine approximation)
     if (params.lat !== undefined && params.lng !== undefined && params.radiusKm) {
-        return results.filter((p) => {
+        results = results.filter((p) => {
             const dist = haversineKm(params.lat!, params.lng!, p.lat, p.lng);
             return dist <= (params.radiusKm ?? 10);
         });
     }
 
-    return results;
+    // Enrich each provider with price/duration ranges from their active services
+    const enriched = await Promise.all(
+        results.map(async (provider) => {
+            const providerServices = await db
+                .select({
+                    priceCents: services.priceCents,
+                    durationMinutes: services.durationMinutes,
+                })
+                .from(services)
+                .where(
+                    and(
+                        eq(services.providerId, provider.id),
+                        eq(services.isActive, true)
+                    )
+                );
+
+            let priceRange: { min: number; max: number } | null = null;
+            let durationRange: { min: number; max: number } | null = null;
+
+            if (providerServices.length > 0) {
+                const prices = providerServices.map((s) => s.priceCents);
+                const durations = providerServices.map((s) => s.durationMinutes);
+                priceRange = {
+                    min: Math.min(...prices),
+                    max: Math.max(...prices),
+                };
+                durationRange = {
+                    min: Math.min(...durations),
+                    max: Math.max(...durations),
+                };
+            }
+
+            return { ...provider, priceRange, durationRange };
+        })
+    );
+
+    return enriched;
 }
 
 export async function getMyServices(providerUserId: string) {
@@ -350,4 +386,261 @@ export async function getServiceDetail(serviceId: string) {
         .limit(1);
 
     return { ...service, category: category ?? null };
+}
+
+export async function generateSlotsForService(
+    providerUserId: string,
+    data: {
+        serviceId: string;
+        date: string;
+        startTime: string;
+        endTime: string;
+        timezone: string;
+    }
+) {
+    const profile = await getProfileByUserId(providerUserId);
+    if (!profile) {
+        throw new AppError(400, "NO_PROFILE", "Create a provider profile first");
+    }
+
+    // Verify the service belongs to this provider
+    const [service] = await db
+        .select()
+        .from(services)
+        .where(
+            and(
+                eq(services.id, data.serviceId),
+                eq(services.providerId, profile.id)
+            )
+        )
+        .limit(1);
+
+    if (!service) {
+        throw new AppError(404, "NOT_FOUND", "Service not found or does not belong to you");
+    }
+
+    const durationMinutes = service.durationMinutes;
+
+    // Parse times
+    const [startHour, startMin] = data.startTime.split(":").map(Number);
+    const [endHour, endMin] = data.endTime.split(":").map(Number);
+
+    const baseDate = new Date(data.date + "T00:00:00");
+    const dayStart = new Date(baseDate);
+    dayStart.setHours(startHour!, startMin!, 0, 0);
+    const dayEnd = new Date(baseDate);
+    dayEnd.setHours(endHour!, endMin!, 0, 0);
+
+    if (dayEnd <= dayStart) {
+        throw new AppError(400, "INVALID_TIME", "End time must be after start time");
+    }
+
+    // Delete existing unbooked slots for this service on this date
+    const dayEndBound = new Date(baseDate);
+    dayEndBound.setHours(23, 59, 59, 999);
+
+    await db
+        .delete(availabilitySlots)
+        .where(
+            and(
+                eq(availabilitySlots.providerId, profile.id),
+                eq(availabilitySlots.serviceId, data.serviceId),
+                eq(availabilitySlots.isBooked, false),
+                gte(availabilitySlots.startAt, dayStart),
+                lte(availabilitySlots.startAt, dayEndBound)
+            )
+        );
+
+    // Generate slots
+    const slots: Array<{
+        providerId: string;
+        serviceId: string;
+        startAt: Date;
+        endAt: Date;
+        timezone: string;
+    }> = [];
+
+    let cursor = new Date(dayStart);
+    while (true) {
+        const slotEnd = new Date(cursor.getTime() + durationMinutes * 60 * 1000);
+        if (slotEnd > dayEnd) break;
+
+        slots.push({
+            providerId: profile.id,
+            serviceId: data.serviceId,
+            startAt: new Date(cursor),
+            endAt: slotEnd,
+            timezone: data.timezone,
+        });
+
+        cursor = slotEnd;
+    }
+
+    if (slots.length === 0) {
+        throw new AppError(400, "NO_SLOTS", "Time range is too short for the service duration");
+    }
+
+    const created = await db.insert(availabilitySlots).values(slots).returning();
+    return created;
+}
+
+export async function getServiceSlots(providerId: string, serviceId: string) {
+    return db
+        .select()
+        .from(availabilitySlots)
+        .where(
+            and(
+                eq(availabilitySlots.providerId, providerId),
+                eq(availabilitySlots.serviceId, serviceId),
+                eq(availabilitySlots.isBooked, false),
+                gte(availabilitySlots.startAt, new Date())
+            )
+        )
+        .orderBy(availabilitySlots.startAt)
+        .limit(50);
+}
+
+export async function getSlotDetail(slotId: string) {
+    const [slot] = await db
+        .select()
+        .from(availabilitySlots)
+        .where(eq(availabilitySlots.id, slotId))
+        .limit(1);
+    return slot;
+}
+
+export async function updateAvailabilitySlot(
+    providerUserId: string,
+    slotId: string,
+    data: { startAt?: string; endAt?: string }
+) {
+    const profile = await getProfileByUserId(providerUserId);
+    if (!profile) {
+        throw new AppError(400, "NO_PROFILE", "Provider profile not found");
+    }
+
+    const [slot] = await db
+        .select()
+        .from(availabilitySlots)
+        .where(
+            and(
+                eq(availabilitySlots.id, slotId),
+                eq(availabilitySlots.providerId, profile.id)
+            )
+        )
+        .limit(1);
+
+    if (!slot) {
+        throw new AppError(404, "NOT_FOUND", "Slot not found");
+    }
+
+    if (slot.isBooked) {
+        throw new AppError(400, "ALREADY_BOOKED", "Cannot modify a booked slot");
+    }
+
+    const updateData: any = {};
+    if (data.startAt) updateData.startAt = new Date(data.startAt);
+    if (data.endAt) updateData.endAt = new Date(data.endAt);
+
+    const [updated] = await db
+        .update(availabilitySlots)
+        .set(updateData)
+        .where(eq(availabilitySlots.id, slotId))
+        .returning();
+
+    return updated;
+}
+
+export async function deleteAvailabilitySlot(
+    providerUserId: string,
+    slotId: string
+) {
+    const profile = await getProfileByUserId(providerUserId);
+    if (!profile) {
+        throw new AppError(400, "NO_PROFILE", "Provider profile not found");
+    }
+
+    const [slot] = await db
+        .select()
+        .from(availabilitySlots)
+        .where(
+            and(
+                eq(availabilitySlots.id, slotId),
+                eq(availabilitySlots.providerId, profile.id)
+            )
+        )
+        .limit(1);
+
+    if (!slot) {
+        throw new AppError(404, "NOT_FOUND", "Slot not found");
+    }
+
+    if (slot.isBooked) {
+        throw new AppError(400, "ALREADY_BOOKED", "Cannot delete a booked slot");
+    }
+
+    await db.delete(availabilitySlots).where(eq(availabilitySlots.id, slotId));
+
+    return { success: true };
+}
+
+export async function createSingleSlot(
+    providerUserId: string,
+    data: {
+        serviceId: string;
+        date: string;      // YYYY-MM-DD
+        startTime: string;  // HH:MM
+        endTime: string;    // HH:MM
+        timezone: string;
+    }
+) {
+    const profile = await getProfileByUserId(providerUserId);
+    if (!profile) {
+        throw new AppError(400, "NO_PROFILE", "Provider profile not found");
+    }
+
+    // Validate service belongs to provider
+    const [svc] = await db
+        .select()
+        .from(services)
+        .where(
+            and(eq(services.id, data.serviceId), eq(services.providerId, profile.id))
+        )
+        .limit(1);
+    if (!svc) {
+        throw new AppError(404, "NOT_FOUND", "Service not found");
+    }
+
+    const baseDate = new Date(`${data.date}T00:00:00`);
+    if (isNaN(baseDate.getTime())) {
+        throw new AppError(400, "INVALID_DATE", "Invalid date format");
+    }
+
+    const [sH, sM] = data.startTime.split(":").map(Number);
+    const [eH, eM] = data.endTime.split(":").map(Number);
+    if (sH === undefined || sM === undefined || eH === undefined || eM === undefined) {
+        throw new AppError(400, "INVALID_TIME", "Invalid time format");
+    }
+
+    const start = new Date(baseDate);
+    start.setHours(sH, sM, 0, 0);
+    const end = new Date(baseDate);
+    end.setHours(eH, eM, 0, 0);
+
+    if (end <= start) {
+        throw new AppError(400, "INVALID_TIME", "End time must be after start time");
+    }
+
+    const [created] = await db
+        .insert(availabilitySlots)
+        .values({
+            providerId: profile.id,
+            serviceId: data.serviceId,
+            startAt: start,
+            endAt: end,
+            timezone: data.timezone,
+        })
+        .returning();
+
+    return created;
 }

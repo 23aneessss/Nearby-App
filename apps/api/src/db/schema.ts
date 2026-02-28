@@ -87,6 +87,8 @@ export const availabilitySlots = pgTable("availability_slots", {
     providerId: uuid("provider_id")
         .references(() => providerProfiles.id)
         .notNull(),
+    serviceId: uuid("service_id")
+        .references(() => services.id),
     startAt: timestamp("start_at", { withTimezone: true }).notNull(),
     endAt: timestamp("end_at", { withTimezone: true }).notNull(),
     isBooked: boolean("is_booked").default(false).notNull(),
