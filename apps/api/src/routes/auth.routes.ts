@@ -46,4 +46,30 @@ router.get(
     }
 );
 
+router.patch(
+    "/profile",
+    authenticate,
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const user = await authService.updateProfile(req.user!.userId, req.body);
+            res.json({ success: true, data: user });
+        } catch (err) {
+            next(err);
+        }
+    }
+);
+
+router.post(
+    "/change-password",
+    authenticate,
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const result = await authService.changePassword(req.user!.userId, req.body);
+            res.json({ success: true, data: result });
+        } catch (err) {
+            next(err);
+        }
+    }
+);
+
 export default router;

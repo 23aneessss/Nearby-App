@@ -152,12 +152,12 @@ function inferSignupRole(data: SignUpData): "CLIENT" | "PROVIDER" {
 
     const hasProviderSignal = Boolean(
         data.businessName ||
-            data.profession ||
-            data.serviceDescription ||
-            data.address ||
-            data.city ||
-            data.name ||
-            data.description
+        data.profession ||
+        data.serviceDescription ||
+        data.address ||
+        data.city ||
+        data.name ||
+        data.description
     );
 
     return hasProviderSignal ? "PROVIDER" : "CLIENT";
@@ -196,4 +196,64 @@ function buildProviderProfileData(
         lng: data.lng ?? 0,
         workingHours: data.workingHours?.trim() || "Mon-Fri 9:00-17:00",
     };
+}
+
+// ─── Profile Management ──────────────────────────────────
+
+export async function updateProfile(
+    userId: string,
+    data: { firstName?: string; lastName?: string; phone?: string }
+) {
+    const updateData: { firstName?: string; lastName?: string; phone?: string | null } = {};
+    if (data.firstName) updateData.firstName = data.firstName.trim();
+    if (data.lastName) updateData.lastName = data.lastName.trim();
+    if (data.phone !== undefined) updateData.phone = data.phone.trim() || null;
+
+    if (!updateData.firstName && !updateData.lastName && updateData.phone === undefined) {
+        throw new AppError(400, "NO_DATA", "No fields to update");
+    }
+
+    const [updated] = await db
+        .update(users)
+        .set(updateData)
+        .where(eq(users.id, userId))
+        .returning();
+
+    if (!updated) {
+        throw new AppError(404, "NOT_FOUND", "User not found");
+    }
+
+    return sanitizeUser(updated);
+}
+
+export async function changePassword(
+    userId: string,
+    data: { currentPassword: string; newPassword: string }
+) {
+    const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+    if (!user) {
+        throw new AppError(404, "NOT_FOUND", "User not found");
+    }
+
+    const valid = await bcrypt.compare(data.currentPassword, user.passwordHash);
+    if (!valid) {
+        throw new AppError(400, "WRONG_PASSWORD", "Current password is incorrect");
+    }
+
+    if (data.newPassword.length < 6) {
+        throw new AppError(400, "WEAK_PASSWORD", "New password must be at least 6 characters");
+    }
+
+    const newHash = await bcrypt.hash(data.newPassword, SALT_ROUNDS);
+    await db
+        .update(users)
+        .set({ passwordHash: newHash })
+        .where(eq(users.id, userId));
+
+    return { success: true };
 }
