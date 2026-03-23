@@ -3,7 +3,9 @@ dist/
 .expo/
 *.tsbuildinfo
 .env
-.env.local
+.env.local  
 ios/
 android/
 .DS_Store
+apps/api/.env
+apps/mobile/.env

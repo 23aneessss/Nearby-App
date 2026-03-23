@@ -11,14 +11,17 @@ export async function getCategories() {
     return db.select().from(categories).where(eq(categories.isActive, true));
 }
 
+
 export async function getAllCategories() {
     return db.select().from(categories);
 }
+
 
 export async function createCategory(name: string, icon: string) {
     const [cat] = await db.insert(categories).values({ name, icon }).returning();
     return cat;
 }
+
 
 export async function toggleCategory(categoryId: string) {
     const [cat] = await db
@@ -27,9 +30,11 @@ export async function toggleCategory(categoryId: string) {
         .where(eq(categories.id, categoryId))
         .limit(1);
 
+
     if (!cat) {
         throw new AppError(404, "NOT_FOUND", "Category not found");
     }
+
 
     const [updated] = await db
         .update(categories)
@@ -39,6 +44,7 @@ export async function toggleCategory(categoryId: string) {
 
     return updated;
 }
+
 
 // ─── Admin Provider Management ───────────────────────────
 export async function getAdminProviders(verified?: boolean) {
@@ -50,6 +56,7 @@ export async function getAdminProviders(verified?: boolean) {
     }
     return db.select().from(providerProfiles);
 }
+
 
 export async function verifyProvider(
     providerId: string,
@@ -76,6 +83,7 @@ export async function verifyProvider(
 
     return updated;
 }
+
 
 export async function blockProvider(
     providerId: string,
