@@ -3,8 +3,7 @@ import {
     categories,
     users,
     providerProfiles,
-    bookings,
-    reviews,
+    bookings,reviews,
     auditLogs,supportTickets,
 } from "../db/schema.js";
 import { eq, sql, count, and } from "drizzle-orm";
