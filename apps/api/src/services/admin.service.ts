@@ -1,11 +1,5 @@
 import { db } from "../db/client.js";
-import {
-    categories,
-    users,
-    providerProfiles,
-    bookings,reviews,
-    auditLogs,supportTickets,
-} from "../db/schema.js";
+import {categories ,users ,providerProfiles, bookings, reviews, auditLogs, supportTickets } from "../db/schema.js";
 import { eq, sql, count, and } from "drizzle-orm";
 import { AppError } from "../middleware/error.js";
 import { createAuditLog } from "./audit.service.js";
