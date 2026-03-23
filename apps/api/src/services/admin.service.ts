@@ -5,8 +5,7 @@ import {
     providerProfiles,
     bookings,
     reviews,
-    auditLogs,
-    supportTickets,
+    auditLogs,supportTickets,
 } from "../db/schema.js";
 import { eq, sql, count, and } from "drizzle-orm";
 import { AppError } from "../middleware/error.js";
